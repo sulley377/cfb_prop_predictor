@@ -48,11 +48,11 @@ prop_type = st.sidebar.selectbox(
 
 # Persist DraftKings toggle in session_state and URL query params
 if 'enable_dk' not in st.session_state:
-    q = st.experimental_get_query_params()
+    q = st.query_params
     st.session_state['enable_dk'] = q.get('enable_dk', ['0'])[0] in ('1', 'true', 'True')
 
 def _on_toggle():
-    params = st.experimental_get_query_params()
+    params = dict(st.query_params)
     params['enable_dk'] = '1' if st.session_state['enable_dk'] else '0'
     st.experimental_set_query_params(**params)
 

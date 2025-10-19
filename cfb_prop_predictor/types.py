@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
 
 
@@ -24,6 +24,8 @@ class GatheredData(BaseModel):
     # without Pydantic coercion removing attribute access.
     player_stats: Optional[Any]
     team_stats: Optional[Any]
+    # When running the scanner workflow, gather_data will populate `all_props`.
+    all_props: Optional[List[Dict[str, Any]]] = None
 
 
 class AnalysisOutput(BaseModel):

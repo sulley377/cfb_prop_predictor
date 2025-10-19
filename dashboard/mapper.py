@@ -86,49 +86,61 @@ def _normalize(obj: Any):
 
 
 def _rows_from_gathered(gathered_data, request=None, result=None):
-    """Build compact table rows from gathered_data/result.
-
-    Returns a list with a single dict row with keys:
-    player, position, team, opponent, datetime, market, prediction_score, rotowire, hit_rate, league
     """
-    # gathered_data may be a dict-like with keys 'player_stats' and 'team_stats'
-    if not gathered_data:
-        gathered_data = {}
+    Maps the 'result' object to a list of table rows.
 
-    pd_raw = None
+    This version reads from the 'gathered_data.all_props' list
+    provided by the new auto-scanner.
+    """
+    if not result:
+        return []
+
+    # Get the list of props from the new key
     if isinstance(gathered_data, dict):
-        pd_raw = gathered_data.get('player_stats')
-        td_raw = gathered_data.get('team_stats')
+        props_list = gathered_data.get('all_props', [])
     else:
-        pd_raw = getattr(gathered_data, 'player_stats', None)
-        td_raw = getattr(gathered_data, 'team_stats', None)
+        props_list = getattr(gathered_data, 'all_props', []) or []
+    
+    mapped_rows = []
+    
+    # Loop over each prop and build a row
+    for prop in props_list:
+        try:
+            # 'prop' is the rich dictionary from your scraper
+            player_name = prop.get('name', 'N/A')
+            position = prop.get('position', 'N/A')
+            team = prop.get('team_abbrev', prop.get('team_name', 'N/A'))
+            opponent = prop.get('opponent_abbrev', prop.get('opponent_name', 'N/A'))
+            
+            start_time_iso = prop.get('start_time')
+            start_time_str = _format_datetime_human(start_time_iso)
+            
+            market = prop.get('market_name', 'N/A')
+            # prop_line may be under several keys depending on scraper; check common ones
+            prop_line = prop.get('prop_line') or prop.get('prop_value') or (prop.get('odds_data').prop_line if prop.get('odds_data') and hasattr(prop.get('odds_data'), 'prop_line') else 'N/A')
+            market_with_line = f"{market} ({prop_line})" if prop_line != 'N/A' else market
 
-    pd = _normalize(pd_raw)
-    td = _normalize(td_raw)
-
-    player = pd.get('name') or pd.get('player') or (request.get('player') if request else None) or 'N/A'
-    position = pd.get('position') or 'N/A'
-    team = pd.get('team_abbrev') or pd.get('team_name') or td.get('name') or 'N/A'
-    opponent = pd.get('opponent_abbrev') or pd.get('opponent_name') or 'N/A'
-    start_time = pd.get('start_time') or None
-    datetime_human = _format_datetime_human(start_time)
-
-    market = _format_market_name(result.get('analysis', {}).get('summary') if isinstance(result, dict) else None)
-    prediction_score = (result.get('prediction', {}).get('confidence') if isinstance(result, dict) else None) or 'N/A'
-
-    row = {
-        'player': player,
-        'position': position,
-        'team': team,
-        'opponent': opponent,
-        'datetime': datetime_human,
-        'market': market,
-        'prediction_score': prediction_score,
-        'rotowire': 'N/A',
-        'hit_rate': 'N/A',
-        'league': pd.get('league') or td.get('league') or 'N/A'
-    }
-    return [row]
+            league = prop.get('league', 'N/A')
+            
+            row = {
+                'player': player_name,
+                'position': position,
+                'team': team,
+                'opponent': opponent,
+                'datetime': start_time_str,
+                'market': market_with_line,
+                'prediction_score': 0, # Prediction is bypassed for scanner
+                'rotowire': 'N/A',
+                'hit_rate': 'N/A',
+                'league': league
+            }
+            mapped_rows.append(row)
+        
+        except Exception as e:
+            print(f"Error mapping prop to row: {e}")
+            continue
+            
+    return mapped_rows
 
 
 if __name__ == '__main__':

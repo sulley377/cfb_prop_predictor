@@ -1,47 +1,57 @@
+# cfb_prop_predictor/workflow.py
 import asyncio
-from typing import Dict
+from typing import Dict, Any
 
+# Try package-style imports; fall back to top-level module imports when running
+# from the repository root where the package context may not be set.
 try:
-    # Agents import via package
-    from cfb_prop_predictor.agents import data_gatherer, analyzer, predictor
+    from cfb_prop_predictor.agents.data_gatherer import gather_data
+    from cfb_prop_predictor.agents.analyzer import analyze as analyze_fn
+    from cfb_prop_predictor.agents.predictor import predict as predict_fn
+    from cfb_prop_predictor.types import GatheredData, AnalysisOutput, PredictionOutput
 except Exception:
-    # Fallback to top-level agents/ path when running from repo root
-    from ..agents import data_gatherer, analyzer, predictor  # type: ignore
+    # Fallback to top-level imports when running from repo root
+    from agents.data_gatherer import gather_data  # type: ignore
+    from agents.analyzer import analyze as analyze_fn  # type: ignore
+    from agents.predictor import predict as predict_fn  # type: ignore
+    from cfb_prop_predictor.types import GatheredData, AnalysisOutput, PredictionOutput
+import asyncio
+from typing import Dict, Any
 
-
-def run_workflow_sync(request: Dict) -> Dict:
-    """Synchronous wrapper to run the async data gatherer and the sync agents.
-
-    Expected request: {"game":..., "player":..., "prop_type":...}
-    Returns dict with keys: gathered_data, analysis, prediction (serialized as dicts)
+async def run_workflow(league: str, prop_type: str) -> Dict[str, Any]:
     """
-    game = request.get("game")
-    player = request.get("player")
-    prop_type = request.get("prop_type")
+    Runs the full data gathering, analysis, and prediction workflow
+    for all available props in a league.
+    """
+    # 1. Gather Data
+    # Pass the 'league' and 'prop_type' arguments from Streamlit
+    print(f"[Workflow] Starting gather_data for {league} / {prop_type}")
+    gathered_data: GatheredData = await gather_data(league=league, prop_type=prop_type)
 
-    gathered = asyncio.run(data_gatherer.gather_data(game, player, prop_type))
+    # 2. Analyze Data
+    # The analyzer agent is built for a *single player*, not a list.
+    # We will bypass it for the scanner and return a placeholder AnalysisOutput.
+    analysis = AnalysisOutput(
+        summary=f"Data gathered for {league}. Analysis/Prediction agents are bypassed for multi-prop scan.",
+        key_metrics={},
+        risk_factors=[],
+    )
 
-    # Convert plain dict placeholders to attribute-accessible objects so
-    # existing agents (analyzer) can access `.name` and `.defensive_rank`.
-    from types import SimpleNamespace
-
-    if getattr(gathered, 'player_stats', None) and isinstance(gathered.player_stats, dict):
-        gathered.player_stats = SimpleNamespace(**gathered.player_stats)
-    if getattr(gathered, 'team_stats', None) and isinstance(gathered.team_stats, dict):
-        gathered.team_stats = SimpleNamespace(**gathered.team_stats)
-
-    analysis = analyzer.analyze(gathered, prop_type)
-    prediction = predictor.predict(analysis)
-
-    # Convert Pydantic models to dicts when necessary
-    def to_serializable(obj):
-        try:
-            return obj.dict()
-        except Exception:
-            return obj
+    # 3. Get Prediction (bypassed)
+    prediction = PredictionOutput(
+        recommended_bet="N/A",
+        projected_value=0.0,
+        edge=0.0,
+        confidence=0,
+    )
 
     return {
-        "gathered_data": to_serializable(gathered),
-        "analysis": to_serializable(analysis),
-        "prediction": to_serializable(prediction),
+        # Use .model_dump() if GatheredData is a Pydantic model
+        "gathered_data": gathered_data.model_dump() if hasattr(gathered_data, 'model_dump') else gathered_data,
+        "analysis": analysis.model_dump(),
+        "prediction": prediction.model_dump(),
     }
+
+def run_workflow_sync(league: str, prop_type: str) -> Dict[str, Any]:
+    """Synchronous wrapper for the async workflow."""
+    return asyncio.run(run_workflow(league, prop_type))

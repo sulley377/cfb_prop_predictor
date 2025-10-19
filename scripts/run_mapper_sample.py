@@ -42,7 +42,10 @@ def main():
     os.environ.pop('ENABLE_DK_FALLBACK', None)
 
     print("Running workflow for sample request:\n", json.dumps(req, indent=2))
-    result = run_workflow_sync(req)
+    # Extract league and prop_type from req
+    league = "cfb"  # Assuming CFB for this sample
+    prop_type = req["prop_type"]
+    result = run_workflow_sync(league, prop_type)
     print('\n--- RAW RESULT (sanitized) ---')
     print(json.dumps(safe_serialize(result), indent=2))
 

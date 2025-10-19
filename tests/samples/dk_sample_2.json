@@ -1,0 +1,15 @@
+{
+  "data": {
+    "players": [
+      {
+        "id": "54321",
+        "playerName": "Travis Kelce",
+        "draftkings_recs": "3.5",
+        "fanduel_recs": "3.5",
+        "markets": {
+          "recs": "3.5"
+        }
+      }
+    ]
+  }
+}

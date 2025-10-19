@@ -1,0 +1,12 @@
+{
+  "players": [
+    {
+      "playerId": "12345",
+      "playerName": "Travis Kelce",
+      "markets": {
+        "recs": "3.5",
+        "rec_odds": "-150"
+      }
+    }
+  ]
+}

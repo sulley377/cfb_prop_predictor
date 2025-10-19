@@ -4,6 +4,14 @@ from typing import Optional
 from cfb_prop_predictor.types import OddsData, MatchupOdds
 import re
 import json
+import os
+
+
+# Controlled debug printing for noisy scraper output
+def _debug_print(*args, **kwargs):
+    if os.environ.get('SCRAPER_DEBUG', '0') in ('1', 'true', 'True'):
+        print(*args, **kwargs)
+
 
 async def scrape_player_props(page: Page, player_name: str, prop_type: str) -> Optional[OddsData]:
     """Scrapes Rotowire for a specific player's prop line and odds.
@@ -35,14 +43,14 @@ async def scrape_player_props(page: Page, player_name: str, prop_type: str) -> O
             content = await page.content()
             # Find JS `data: [...]` arrays in the page and try to parse them.
             js_arrays = re.findall(r"data:\s*(\[[\s\S]*?\])", content)
-            print(f"DEBUG: found {len(js_arrays)} js_arrays")
+            _debug_print(f"DEBUG: found {len(js_arrays)} js_arrays")
             for idx, arr_text in enumerate(js_arrays):
-                print(f"DEBUG: parsing array #{idx}, len={len(arr_text)}")
+                _debug_print(f"DEBUG: parsing array #{idx}, len={len(arr_text)}")
                 try:
                     data_list = json.loads(arr_text)
                 except Exception:
                     # Not strictly JSON or failed to parse; skip
-                    print("DEBUG: json.loads failed for an array")
+                    _debug_print("DEBUG: json.loads failed for an array")
                     continue
 
                 # data_list is expected to be a list of player dicts
@@ -56,30 +64,30 @@ async def scrape_player_props(page: Page, player_name: str, prop_type: str) -> O
                     name = (player_obj.get('name') or '').strip()
                     if not name:
                         continue
-                    print(f"DEBUG: json player name={name}")
+                    _debug_print(f"DEBUG: json player name={name}")
 
                     name_norm = re.sub(r"[^a-z0-9 ]+", "", name.lower())
                     if name_norm == target_name or target_last in name_norm.split():
                         # Detailed debug for matched candidate so we can inspect available keys/values
                         try:
-                            print(f"DEBUG: matched target candidate name={name} (norm={name_norm})")
+                            _debug_print(f"DEBUG: matched target candidate name={name} (norm={name_norm})")
                             keys = list(player_obj.keys())
-                            print(f"DEBUG: player_obj keys count={len(keys)}")
+                            _debug_print(f"DEBUG: player_obj keys count={len(keys)}")
                             # show prop-like keys (rec, yds, pass, rush, td) and market keys
                             interesting = {k: player_obj[k] for k in keys if any(sub in k.lower() for sub in ['rec', 'yds', 'pass', 'rush', 'td', 'mgm', 'draft', 'fanduel', 'underdog', 'caesars', 'bet'])}
                             # Truncate the dump to avoid huge logs
                             try:
                                 interesting_json = json.dumps(interesting)
-                                print(f"DEBUG: interesting keys and values={interesting_json[:1000]}")
+                                _debug_print(f"DEBUG: interesting keys and values={interesting_json[:1000]}")
                             except Exception:
-                                print(f"DEBUG: interesting keys (non-json)={list(interesting.keys())}")
+                                _debug_print(f"DEBUG: interesting keys (non-json)={list(interesting.keys())}")
                             try:
                                 full_len = len(json.dumps(player_obj))
-                                print(f"DEBUG: player_obj JSON len={full_len}")
+                                _debug_print(f"DEBUG: player_obj JSON len={full_len}")
                             except Exception:
                                 pass
                         except Exception:
-                            print("DEBUG: failed to print detailed player_obj info")
+                            _debug_print("DEBUG: failed to print detailed player_obj info")
                         # Delegate extraction to provider_parser which prefers sportsbook-prefixed keys
                         try:
                             from Utilis.provider_parser import extract_prop_from_candidate
@@ -88,7 +96,20 @@ async def scrape_player_props(page: Page, player_name: str, prop_type: str) -> O
                             prop_val = None
 
                         if prop_val is not None:
-                            return OddsData(prop_line=prop_val, over_odds=None, under_odds=None)
+                            # Attempt to extract start_time if present in the candidate object
+                            start_time = None
+                            for tkey in ('start_time', 'game_time', 'kickoff', 'start'):
+                                if tkey in player_obj:
+                                    start_time = player_obj.get(tkey)
+                                    break
+                            od = OddsData(prop_line=prop_val, over_odds=None, under_odds=None)
+                            # attach start_time attribute if available (caller normalizes)
+                            if start_time:
+                                try:
+                                    setattr(od, 'start_time', start_time)
+                                except Exception:
+                                    pass
+                            return od
         except Exception:
             # don't let the JSON fallback crash the scraper; continue to DOM parsing
             pass
@@ -172,8 +193,10 @@ async def scrape_player_props(page: Page, player_name: str, prop_type: str) -> O
                                 pass
 
                         if prop_line_val is not None:
+                            # No reliable start_time here from DOM parsing, return basic OddsData
                             return OddsData(prop_line=prop_line_val, over_odds=over_odds, under_odds=under_odds)
     return None
+
 
 async def scrape_matchup_odds(page: Page, game: str) -> Optional[MatchupOdds]:
     """Scrapes Rotowire for a specific game's matchup odds."""
@@ -207,4 +230,5 @@ async def scrape_matchup_odds(page: Page, game: str) -> Optional[MatchupOdds]:
                 total={'over': " ".join(total_over_text), 'under': " ".join(total_under_text)}
             )
     return None
+
 # Play scraper utility

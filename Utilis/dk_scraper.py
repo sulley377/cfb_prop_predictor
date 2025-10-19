@@ -4,6 +4,41 @@ from typing import Optional, Any, Dict
 from playwright.async_api import Page
 from cfb_prop_predictor.types import OddsData
 from Utilis.provider_parser import extract_prop_from_candidate
+import datetime
+
+
+def _abbrev(name: Optional[str]) -> Optional[str]:
+    if not name:
+        return None
+    try:
+        last = name.split()[-1]
+        return ''.join([c for c in last.upper() if c.isalpha()])[:3]
+    except Exception:
+        return (name or '')[:3].upper()
+
+
+def _iso_from_timestamp(val: Any) -> Optional[str]:
+    # Accept numeric epoch (seconds or ms) or ISO-like strings
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        # heuristic: if val looks like ms (>1e12) or seconds
+        try:
+            if val > 1e12:
+                ts = val / 1000.0
+            else:
+                ts = float(val)
+            return datetime.datetime.utcfromtimestamp(ts).isoformat() + 'Z'
+        except Exception:
+            return None
+    s = str(val)
+    # Try to parse ISO-ish strings
+    try:
+        # normalize 'Z' into +00:00 for fromisoformat
+        dt = datetime.datetime.fromisoformat(s.replace('Z', '+00:00'))
+        return dt.astimezone(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
+    except Exception:
+        return None
 
 
 def extract_prop_from_candidate(candidate: Dict[str, Any], prop_identifier: str) -> Optional[float]:
@@ -67,7 +102,7 @@ def extract_prop_from_candidate(candidate: Dict[str, Any], prop_identifier: str)
     return None
 
 
-async def scrape_draftkings_player_props(page: Page, player_name: str, prop_type: str) -> Optional[OddsData]:
+async def scrape_draftkings_player_props(page: Page, player_name: str, prop_type: str) -> Optional[Dict[str, Any]]:
     """Attempt to scrape a DraftKings-style sportsbook page for a player's prop.
 
     This is an optimistic, best-effort scraper that mirrors the Rotowire
@@ -89,14 +124,20 @@ async def scrape_draftkings_player_props(page: Page, player_name: str, prop_type
 
     for url in urls:
         try:
-            await page.goto(url, wait_until='networkidle')
+            # keep navigation short to avoid long hangs in restricted environments
+            await page.goto(url, wait_until='networkidle', timeout=8000)
         except Exception:
             try:
-                await page.goto(url, wait_until='domcontentloaded')
+                await page.goto(url, wait_until='domcontentloaded', timeout=8000)
             except Exception:
+                # unable to load the sportsbook page quickly; try next URL
                 continue
 
-        content = await page.content()
+        try:
+            content = await page.content()
+        except Exception:
+            # If we can't fetch content, skip this URL quickly
+            continue
 
         # Try to extract any large JSON-like objects embedded in scripts
         js_objects = re.findall(r"(\{[\s\S]{100,200000}?\})", content)
@@ -126,7 +167,42 @@ async def scrape_draftkings_player_props(page: Page, player_name: str, prop_type
                     print(f"DEBUG(dk): matched candidate name={name}")
                     prop_val = extract_prop_from_candidate(candidate, prop_identifier)
                     if prop_val is not None:
-                        return OddsData(prop_line=prop_val, over_odds=None, under_odds=None)
+                        # Build rich return payload
+                        # attempt to discover position/team/opponent/league/start_time
+                        position = candidate.get('position') or candidate.get('pos') or candidate.get('positionName')
+                        team_name = candidate.get('team') or candidate.get('teamName') or candidate.get('club') or candidate.get('homeTeam') or candidate.get('awayTeam')
+                        opponent = None
+                        # try common opponent keys
+                        for ok in ('opponent', 'opponentName', 'awayTeam', 'homeTeam', 'opponent_team'):
+                            if ok in candidate and candidate.get(ok):
+                                opponent = candidate.get(ok)
+                                break
+                        # attempt to detect league/sport
+                        league = None
+                        for lk in ('league', 'sport', 'competition', 'eventType'):
+                            if lk in candidate and candidate.get(lk):
+                                league = candidate.get(lk)
+                                break
+                        # find start time
+                        start_time = None
+                        for tkey in ('start_time', 'startTime', 'eventTime', 'kickoff', 'start'):
+                            if tkey in candidate and candidate.get(tkey):
+                                start_time = _iso_from_timestamp(candidate.get(tkey)) or str(candidate.get(tkey))
+                                break
+
+                        od = OddsData(prop_line=prop_val, over_odds=None, under_odds=None)
+
+                        return {
+                            'name': name,
+                            'position': position,
+                            'team_name': team_name,
+                            'team_abbrev': _abbrev(team_name),
+                            'opponent_name': opponent,
+                            'opponent_abbrev': _abbrev(opponent),
+                            'league': league or ('CFB' if 'college' in prop_type or 'college' in str(candidate).lower() else 'NFL' if 'nfl' in str(candidate).lower() else 'CFB'),
+                            'start_time': start_time,
+                            'odds_data': od
+                        }
 
         # DOM fallback: search for table rows that contain the player name
         selector_candidates = [
@@ -147,7 +223,17 @@ async def scrape_draftkings_player_props(page: Page, player_name: str, prop_type
                         if m:
                             try:
                                 val = float(m.group(0))
-                                return OddsData(prop_line=val, over_odds=None, under_odds=None)
+                                return {
+                                    'name': player_name,
+                                    'position': None,
+                                    'team_name': None,
+                                    'team_abbrev': None,
+                                    'opponent_name': None,
+                                    'opponent_abbrev': None,
+                                    'league': None,
+                                    'start_time': None,
+                                    'odds_data': OddsData(prop_line=float(m.group(0)), over_odds=None, under_odds=None)
+                                }
                             except Exception:
                                 continue
             except Exception:

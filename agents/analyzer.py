@@ -21,9 +21,15 @@ def analyze(data: GatheredData, prop_type: str) -> AnalysisOutput:
 
     # Analyze Team Stats (if available)
     if data.team_stats:
-        key_metrics['opponent_defensive_rank_placeholder'] = data.team_stats.defensive_rank
-        if data.team_stats.defensive_rank <= 25:
-            risks.append(f"Facing a strong defense (ranked #{data.team_stats.defensive_rank}).")
+        # defensive_rank may be missing in placeholder team_stats; handle safely
+        def_rank = getattr(data.team_stats, 'defensive_rank', None)
+        key_metrics['opponent_defensive_rank_placeholder'] = def_rank
+        try:
+            if def_rank is not None and int(def_rank) <= 25:
+                risks.append(f"Facing a strong defense (ranked #{def_rank}).")
+        except Exception:
+            # non-numeric defensive rank; skip the numeric check
+            pass
 
     if not risks:
         risks.append("No major risk factors identified.")

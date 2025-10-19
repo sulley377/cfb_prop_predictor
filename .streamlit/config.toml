@@ -1,0 +1,12 @@
+
+# Streamlit theme mapped from Priceline design-system tokens
+[theme]
+base = "light"
+primaryColor = "#0068ef"        # theme.colors.blue
+backgroundColor = "#edf0f3"     # light background / buttonGray
+secondaryBackgroundColor = "#ffffff"
+textColor = "#001833"           # theme.text
+font = "Montserrat"
+# headerBackgroundColor and borderRadius removed because they're not supported
+## headerBackgroundColor = "#ffffff"
+## borderRadius = 8

@@ -2,6 +2,7 @@
 from cfb_prop_predictor.types import GatheredData, OddsData
 from cfb_prop_predictor.utils.play_scraper import scrape_rotowire_props
 from Utilis.dk_scraper import scrape_draftkings_player_props
+from Utilis.llm_extractor import extract_props
 import os
 from typing import Optional
 
@@ -29,7 +30,15 @@ async def gather_data(game: str, player: Optional[str], prop_type: str) -> Gathe
                 try:
                     from playwright.async_api import async_playwright
                     async with async_playwright() as p:
-                        browser = await p.chromium.launch(headless=True)
+                        import shutil
+                        headed_requested = os.environ.get('PLAYWRIGHT_HEADED', '0') in ('1', 'true', 'True')
+                        can_head = bool(os.environ.get('DISPLAY')) or bool(shutil.which('Xvfb'))
+                        if headed_requested and not can_head:
+                            print("NOTICE: PLAYWRIGHT_HEADED requested but no DISPLAY or Xvfb found; falling back to headless mode.")
+                            headed = False
+                        else:
+                            headed = headed_requested and can_head
+                        browser = await p.chromium.launch(headless=(not headed))
                         page = await browser.new_page()
                         dk_result = await scrape_draftkings_player_props(page, player, prop_type)
                         await page.close()
@@ -43,6 +52,27 @@ async def gather_data(game: str, player: Optional[str], prop_type: str) -> Gathe
                     print(f"[DataGatherer] DraftKings provided odds for {player}: Line {odds_data.prop_line}")
                 else:
                     print(f"[DataGatherer] Could not find live odds for {player} on DraftKings either.")
+                    # As a last resort for demo: try an LLM-assisted extractor using page content or a sample payload
+                    use_sample = os.environ.get('USE_SAMPLE_PAYLOAD', '0') in ('1', 'true', 'True')
+                    if use_sample:
+                        print("[DataGatherer] USE_SAMPLE_PAYLOAD=1 -> attempting LLM extractor on sample payload...")
+                        # Load an included sample JSON if present
+                        sample_path = os.path.join(os.path.dirname(__file__), '..', 'tests', 'samples', 'dk_sample.json')
+                        try:
+                            with open(sample_path, 'r') as f:
+                                sample = f.read()
+                        except Exception:
+                            sample = None
+
+                        parsed = None
+                        try:
+                            parsed = extract_props(sample or '', player, prop_type)
+                        except Exception:
+                            parsed = None
+
+                        if parsed:
+                            odds_data = parsed
+                            print(f"[DataGatherer] LLM extractor returned a sample odds line: {odds_data.prop_line}")
             else:
                 print(f"[DataGatherer] DraftKings fallback disabled (ENABLE_DK_FALLBACK != 1). Skipping.")
 

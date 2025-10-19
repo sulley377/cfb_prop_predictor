@@ -80,51 +80,12 @@ async def scrape_player_props(page: Page, player_name: str, prop_type: str) -> O
                                 pass
                         except Exception:
                             print("DEBUG: failed to print detailed player_obj info")
-                        # find any key in player_obj that mentions the prop identifier
-                        # Rotowire uses shorthand keys like 'recyds', 'passyds', 'rushyds',
-                        # so map common prop identifiers to candidate key fragments.
-                        prop_val = None
-                        prop_key_map = {
-                            'passing': ['passyds', 'passyd', 'passyds', 'passyds', 'passyds', 'pass'],
-                            'receiving': ['recyds', 'recyd', 'rec_yds', 'recyds', 'rec', 'recyds'],
-                            'rushing': ['rushyds', 'rushyd', 'rush_yds', 'rush', 'rushyds'],
-                            'receptions': ['recs', 'rec', 'receptions'],
-                            'anytd': ['anytd', 'any_td'],
-                            'firsttd': ['firsttd', 'first_td'],
-                            'twotd': ['twotd', 'two_td'],
-                            'threetd': ['threetd', 'three_td'],
-                            'recyds': ['recyds'],
-                        }
-
-                        candidates = prop_key_map.get(prop_identifier, [])
-                        # also try a substring fallback (first 3 letters)
-                        short_sub = prop_identifier[:3]
-
-                        for k, v in player_obj.items():
-                            lowk = k.lower()
-                            matched_key = False
-                            if any(cand in lowk for cand in candidates):
-                                matched_key = True
-                            elif short_sub in lowk:
-                                matched_key = True
-
-                            if not matched_key:
-                                continue
-
-                            if v is None or v == "":
-                                continue
-                            # try to extract a float-like value
-                            if isinstance(v, (int, float)):
-                                prop_val = float(v)
-                                break
-                            if isinstance(v, str):
-                                m = re.search(r"-?\d+\.?\d*", v)
-                                if m:
-                                    try:
-                                        prop_val = float(m.group(0))
-                                        break
-                                    except Exception:
-                                        continue
+                        # Delegate extraction to provider_parser which prefers sportsbook-prefixed keys
+                        try:
+                            from Utilis.provider_parser import extract_prop_from_candidate
+                            prop_val = extract_prop_from_candidate(player_obj, prop_identifier)
+                        except Exception:
+                            prop_val = None
 
                         if prop_val is not None:
                             return OddsData(prop_line=prop_val, over_odds=None, under_odds=None)

@@ -18,11 +18,23 @@ async def scrape_rotowire_props(player_name: str, prop_keyword: str):
 	Returns a dict with keys matching `OddsData` or None.
 	"""
 	from playwright.async_api import async_playwright
+	import os
 
 	prop_type = f"player_{prop_keyword}_yards"
 
 	async with async_playwright() as p:
-		browser = await p.chromium.launch(headless=True)
+		# Respect PLAYWRIGHT_HEADED env var to run a headed browser if needed
+		import shutil
+		headed_requested = os.environ.get('PLAYWRIGHT_HEADED', '0') in ('1', 'true', 'True')
+		# Only actually run headed if an X server or Xvfb is available
+		can_head = bool(os.environ.get('DISPLAY')) or bool(shutil.which('Xvfb'))
+		if headed_requested and not can_head:
+			print("NOTICE: PLAYWRIGHT_HEADED requested but no DISPLAY or Xvfb found; falling back to headless mode.")
+			headed = False
+		else:
+			headed = headed_requested and can_head
+		# If headed is True launch with headless=False; otherwise headless=True
+		browser = await p.chromium.launch(headless=(not headed))
 		page = await browser.new_page()
 		try:
 			# call the imported function from Utilis.play_scraper

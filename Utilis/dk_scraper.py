@@ -3,6 +3,7 @@ import json
 from typing import Optional, Any, Dict
 from playwright.async_api import Page
 from cfb_prop_predictor.types import OddsData
+from Utilis.provider_parser import extract_prop_from_candidate
 
 
 def extract_prop_from_candidate(candidate: Dict[str, Any], prop_identifier: str) -> Optional[float]:

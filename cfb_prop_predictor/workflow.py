@@ -1,5 +1,4 @@
 # cfb_prop_predictor/workflow.py
-import asyncio
 from typing import Dict, Any
 
 # Try package-style imports; fall back to top-level module imports when running
@@ -15,10 +14,8 @@ except Exception:
     from agents.analyzer import analyze as analyze_fn  # type: ignore
     from agents.predictor import predict as predict_fn  # type: ignore
     from cfb_prop_predictor.types import GatheredData, AnalysisOutput, PredictionOutput
-import asyncio
-from typing import Dict, Any
 
-async def run_workflow(league: str, prop_type: str) -> Dict[str, Any]:
+def run_workflow(league: str, prop_type: str) -> Dict[str, Any]:
     """
     Runs the full data gathering, analysis, and prediction workflow
     for all available props in a league.
@@ -26,7 +23,7 @@ async def run_workflow(league: str, prop_type: str) -> Dict[str, Any]:
     # 1. Gather Data
     # Pass the 'league' and 'prop_type' arguments from Streamlit
     print(f"[Workflow] Starting gather_data for {league} / {prop_type}")
-    gathered_data: GatheredData = await gather_data(league=league, prop_type=prop_type)
+    gathered_data: GatheredData = gather_data(league=league, prop_type=prop_type)
 
     # 2. Analyze Data
     # The analyzer agent is built for a *single player*, not a list.
@@ -53,5 +50,5 @@ async def run_workflow(league: str, prop_type: str) -> Dict[str, Any]:
     }
 
 def run_workflow_sync(league: str, prop_type: str) -> Dict[str, Any]:
-    """Synchronous wrapper for the async workflow."""
-    return asyncio.run(run_workflow(league, prop_type))
+    """Synchronous wrapper for the workflow."""
+    return run_workflow(league, prop_type)
